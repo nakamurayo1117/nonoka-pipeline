@@ -145,32 +145,48 @@ def generate():
 
             # Plan
             yield sse({'step': 'plan_start', 'message': 'AIで記事構成を生成中...'})
-            try:
-                plan_text = generate_plan(seed, keywords, title)
-            except Exception as e:
-                yield sse({'step': 'error', 'message': f'[planner] generate_plan 失敗: {type(e).__name__}: {e}'})
-                return
+            _pr, _pe = [], []
+            def _run_plan1():
+                try: _pr.append(generate_plan(seed, keywords, title))
+                except Exception as e: _pe.append(e)
+            t = threading.Thread(target=_run_plan1, daemon=True); t.start()
+            dot = 0
+            while t.is_alive():
+                t.join(timeout=5)
+                if t.is_alive():
+                    dot = (dot % 3) + 1
+                    yield sse({'step': 'plan_progress', 'message': f'構成を生成中{"…" * dot}'})
+            if _pe:
+                yield sse({'step': 'error', 'message': f'[planner] generate_plan 失敗: {type(_pe[0]).__name__}: {_pe[0]}'}); return
+            plan_text = _pr[0]
             try:
                 plan = parse_plan_json(plan_text)
             except Exception as e:
-                yield sse({'step': 'plan_retry', 'message': f'JSONを修正中...'})
+                yield sse({'step': 'plan_retry', 'message': 'JSONを修正中...'})
                 try:
                     plan = parse_plan_json(repair_plan_json(plan_text))
                 except Exception as e2:
-                    yield sse({'step': 'error', 'message': f'[planner] JSONパース失敗: {type(e2).__name__}: {e2}'})
-                    return
+                    yield sse({'step': 'error', 'message': f'[planner] JSONパース失敗: {type(e2).__name__}: {e2}'}); return
             plan['article_type'] = article_type
             save_plan(seed, plan)
             yield sse({'step': 'plan_done', 'message': '記事構成の生成完了！'})
 
             # Write
             yield sse({'step': 'write_start', 'message': 'AIで記事本文を執筆中...'})
-            try:
-                article_raw = generate_article(plan)
-                article = strip_code_block(article_raw)
-            except Exception as e:
-                yield sse({'step': 'error', 'message': f'記事の生成に失敗しました: {e}'})
-                return
+            _wr, _we = [], []
+            def _run_write1():
+                try: _wr.append(strip_code_block(generate_article(plan)))
+                except Exception as e: _we.append(e)
+            t = threading.Thread(target=_run_write1, daemon=True); t.start()
+            dot = 0
+            while t.is_alive():
+                t.join(timeout=5)
+                if t.is_alive():
+                    dot = (dot % 3) + 1
+                    yield sse({'step': 'write_progress', 'message': f'記事を執筆中{"…" * dot}'})
+            if _we:
+                yield sse({'step': 'error', 'message': f'記事の生成に失敗しました: {_we[0]}'}); return
+            article = _wr[0]
 
             safe_seed = safe_filename(seed)
             save_article(safe_seed, article)
@@ -189,11 +205,20 @@ def generate():
                 keywords = seed.split() or [seed]
 
             yield sse({'step': 'plan_start', 'message': f'キーワード{len(keywords)}件でAI構成を生成中...'})
-            try:
-                plan_text = generate_plan(seed, keywords, title)
-            except Exception as e:
-                yield sse({'step': 'error', 'message': f'[planner] generate_plan 失敗: {type(e).__name__}: {e}'})
-                return
+            _pr2, _pe2 = [], []
+            def _run_plan2():
+                try: _pr2.append(generate_plan(seed, keywords, title))
+                except Exception as e: _pe2.append(e)
+            t = threading.Thread(target=_run_plan2, daemon=True); t.start()
+            dot = 0
+            while t.is_alive():
+                t.join(timeout=5)
+                if t.is_alive():
+                    dot = (dot % 3) + 1
+                    yield sse({'step': 'plan_progress', 'message': f'構成を生成中{"…" * dot}'})
+            if _pe2:
+                yield sse({'step': 'error', 'message': f'[planner] generate_plan 失敗: {type(_pe2[0]).__name__}: {_pe2[0]}'}); return
+            plan_text = _pr2[0]
             try:
                 plan = parse_plan_json(plan_text)
             except Exception as e:
@@ -201,19 +226,26 @@ def generate():
                 try:
                     plan = parse_plan_json(repair_plan_json(plan_text))
                 except Exception as e2:
-                    yield sse({'step': 'error', 'message': f'[planner] JSONパース失敗: {type(e2).__name__}: {e2}'})
-                    return
+                    yield sse({'step': 'error', 'message': f'[planner] JSONパース失敗: {type(e2).__name__}: {e2}'}); return
             plan['article_type'] = article_type
             save_plan(seed, plan)
             yield sse({'step': 'plan_done', 'message': '記事構成の生成完了！'})
 
             yield sse({'step': 'write_start', 'message': 'AIで記事本文を執筆中...'})
-            try:
-                article_raw = generate_article(plan)
-                article = strip_code_block(article_raw)
-            except Exception as e:
-                yield sse({'step': 'error', 'message': f'記事の生成に失敗しました: {e}'})
-                return
+            _wr2, _we2 = [], []
+            def _run_write2():
+                try: _wr2.append(strip_code_block(generate_article(plan)))
+                except Exception as e: _we2.append(e)
+            t = threading.Thread(target=_run_write2, daemon=True); t.start()
+            dot = 0
+            while t.is_alive():
+                t.join(timeout=5)
+                if t.is_alive():
+                    dot = (dot % 3) + 1
+                    yield sse({'step': 'write_progress', 'message': f'記事を執筆中{"…" * dot}'})
+            if _we2:
+                yield sse({'step': 'error', 'message': f'記事の生成に失敗しました: {_we2[0]}'}); return
+            article = _wr2[0]
 
             safe_seed = safe_filename(seed)
             save_article(safe_seed, article)
@@ -241,12 +273,20 @@ def generate():
             yield sse({'step': 'plan_load', 'message': f'構成「{plan_title}」を読み込みました'})
 
             yield sse({'step': 'write_start', 'message': 'AIで記事本文を執筆中...'})
-            try:
-                article_raw = generate_article(plan)
-                article = strip_code_block(article_raw)
-            except Exception as e:
-                yield sse({'step': 'error', 'message': f'記事の生成に失敗しました: {e}'})
-                return
+            _wr3, _we3 = [], []
+            def _run_write3():
+                try: _wr3.append(strip_code_block(generate_article(plan)))
+                except Exception as e: _we3.append(e)
+            t = threading.Thread(target=_run_write3, daemon=True); t.start()
+            dot = 0
+            while t.is_alive():
+                t.join(timeout=5)
+                if t.is_alive():
+                    dot = (dot % 3) + 1
+                    yield sse({'step': 'write_progress', 'message': f'記事を執筆中{"…" * dot}'})
+            if _we3:
+                yield sse({'step': 'error', 'message': f'記事の生成に失敗しました: {_we3[0]}'}); return
+            article = _wr3[0]
 
             seed_from_file = plan_filename[len('plan_'):-len('.json')]
             save_article(seed_from_file, article)
@@ -579,6 +619,20 @@ function addLog(msg, cls) {
   el.appendChild(d);
   el.scrollTop = el.scrollHeight;
 }
+function updateLastLog(msg) {
+  const el = document.getElementById('log');
+  const last = el.lastElementChild;
+  if (last && last.dataset.progress) {
+    last.textContent = msg;
+  } else {
+    const d = document.createElement('div');
+    d.dataset.progress = '1';
+    d.style.color = '#b39ddb';
+    d.textContent = msg;
+    el.appendChild(d);
+  }
+  el.scrollTop = el.scrollHeight;
+}
 
 function badge(id, state) {
   document.getElementById(id).className = 'badge ' + (state || '');
@@ -654,10 +708,13 @@ function handle(d) {
     case 'collect_warn':     badge('b1','done');  addLog('⚠️ ' + d.message, 'warn'); break;
     case 'collect_skip':     addLog(d.message); break;
     case 'plan_start':       badge('b2','active'); addLog(d.message); break;
+    case 'plan_progress':    updateLastLog(d.message); break;
+    case 'plan_retry':       updateLastLog(d.message); break;
     case 'plan_done':        badge('b2','done');  addLog(d.message, 'ok'); break;
     case 'plan_load':        badge('b2','done');  addLog(d.message, 'ok'); break;
     case 'plan_skip':        addLog(d.message); break;
     case 'write_start':      badge('b3','active'); addLog(d.message); break;
+    case 'write_progress':   updateLastLog(d.message); break;
     case 'done':
       badge('b3','done');
       addLog('生成完了！', 'ok');
