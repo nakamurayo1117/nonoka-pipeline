@@ -294,8 +294,15 @@ HTML = """<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ののか記事ジェネレーター</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="ののか">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <meta name="theme-color" content="#FF69B4">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/static/service-worker.js'); }</script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -843,8 +850,15 @@ ARTICLES_HTML = f'''<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>過去の記事 | ののか記事ジェネレーター</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="ののか">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <meta name="theme-color" content="#FF69B4">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>if ('serviceWorker' in navigator) {{ navigator.serviceWorker.register('/static/service-worker.js'); }}</script>
   <style>{_BASE_CSS}
     .card-header {{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }}
     .card-header h2 {{ font-size: 1.05rem; font-weight: 700; color: #9B59B6; }}
@@ -941,8 +955,15 @@ EDIT_HTML = f'''<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>編集 | ののか記事ジェネレーター</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="ののか">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <meta name="theme-color" content="#FF69B4">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>if ('serviceWorker' in navigator) {{ navigator.serviceWorker.register('/static/service-worker.js'); }}</script>
   <style>{_BASE_CSS}
     .page-title {{ font-size: 1.05rem; font-weight: 700; color: #9B59B6; margin-bottom: .3rem; }}
     .page-slug  {{ font-size: .8rem; color: #b39ddb; margin-bottom: 1.25rem; }}
