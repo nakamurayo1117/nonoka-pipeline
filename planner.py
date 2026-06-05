@@ -112,7 +112,34 @@ def parse_plan_json(text: str) -> dict:
         if start == -1 or end == -1:
             raise ValueError('APIレスポンスにJSONが見つかりませんでした')
         json_str = text[start:end + 1]
-    return json.loads(json_str)
+
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        pass
+
+    # 曲引用符・全角引用符をストレートクォートに変換
+    cleaned = json_str
+    for old, new in [('“', '"'), ('”', '"'), ('‘', "'"), ('’', "'"),
+                     ('「', '"'), ('」', '"'), ('『', '"'), ('』', '"')]:
+        cleaned = cleaned.replace(old, new)
+    # 末尾カンマ除去
+    cleaned = re.sub(r',(\s*[}\]])', r'\1', cleaned)
+    return json.loads(cleaned)
+
+
+def repair_plan_json(broken_text: str) -> str:
+    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    client = anthropic.Anthropic(api_key=api_key)
+    message = client.messages.create(
+        model='claude-sonnet-4-6',
+        max_tokens=6000,
+        messages=[{
+            'role': 'user',
+            'content': f'以下のテキストからJSONを抽出し、構文エラーを修正して、有効なJSONのみを出力してください。説明は不要です。\n\n{broken_text}'
+        }],
+    )
+    return message.content[0].text
 
 
 def save_plan(seed: str, plan: dict) -> str:

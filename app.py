@@ -10,6 +10,7 @@ from collector import collect_with_progress, save_keywords, safe_filename
 from planner import generate_plan, parse_plan_json, save_plan
 from writer import generate_article, strip_code_block, save_article
 from publisher import extract_slug, publish_to_blog, deploy_to_vercel, push_to_github, save_draft_to_github, sync_drafts_from_github
+from planner import repair_plan_json
 
 app = Flask(__name__)
 
@@ -152,8 +153,12 @@ def generate():
             try:
                 plan = parse_plan_json(plan_text)
             except Exception as e:
-                yield sse({'step': 'error', 'message': f'[planner] JSONパース失敗: {type(e).__name__}: {e} — 冒頭: {plan_text[:200]}'})
-                return
+                yield sse({'step': 'plan_retry', 'message': f'JSONを修正中...'})
+                try:
+                    plan = parse_plan_json(repair_plan_json(plan_text))
+                except Exception as e2:
+                    yield sse({'step': 'error', 'message': f'[planner] JSONパース失敗: {type(e2).__name__}: {e2}'})
+                    return
             plan['article_type'] = article_type
             save_plan(seed, plan)
             yield sse({'step': 'plan_done', 'message': '記事構成の生成完了！'})
@@ -192,8 +197,12 @@ def generate():
             try:
                 plan = parse_plan_json(plan_text)
             except Exception as e:
-                yield sse({'step': 'error', 'message': f'[planner] JSONパース失敗: {type(e).__name__}: {e}'})
-                return
+                yield sse({'step': 'plan_retry', 'message': 'JSONを修正中...'})
+                try:
+                    plan = parse_plan_json(repair_plan_json(plan_text))
+                except Exception as e2:
+                    yield sse({'step': 'error', 'message': f'[planner] JSONパース失敗: {type(e2).__name__}: {e2}'})
+                    return
             plan['article_type'] = article_type
             save_plan(seed, plan)
             yield sse({'step': 'plan_done', 'message': '記事構成の生成完了！'})
