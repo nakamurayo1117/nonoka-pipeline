@@ -102,6 +102,49 @@ def push_to_github(article_path: str, slug: str) -> bool:
         return False
 
 
+def save_draft_to_github(content: str, filename: str) -> bool:
+    token = os.environ.get('GITHUB_TOKEN')
+    repo = os.environ.get('PIPELINE_GITHUB_REPO')
+    if not token or not repo:
+        return False
+    encoded = base64.b64encode(content.encode('utf-8')).decode('utf-8')
+    file_path = f'output/articles/{filename}'
+    url = f'https://api.github.com/repos/{repo}/contents/{file_path}'
+    headers = {'Authorization': f'token {token}', 'Accept': 'application/vnd.github.v3+json'}
+    response = requests.get(url, headers=headers)
+    sha = response.json().get('sha') if response.status_code == 200 else None
+    data = {'message': f'Save draft: {filename}', 'content': encoded, 'branch': 'main'}
+    if sha:
+        data['sha'] = sha
+    response = requests.put(url, headers=headers, json=data)
+    return response.status_code in [200, 201]
+
+
+def sync_drafts_from_github() -> bool:
+    token = os.environ.get('GITHUB_TOKEN')
+    repo = os.environ.get('PIPELINE_GITHUB_REPO')
+    if not token or not repo:
+        return False
+    headers = {'Authorization': f'token {token}', 'Accept': 'application/vnd.github.v3+json'}
+    url = f'https://api.github.com/repos/{repo}/contents/output/articles'
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        return False
+    files = [f for f in response.json() if isinstance(f, dict) and f.get('name', '').startswith('article_') and f.get('name', '').endswith('.md')]
+    os.makedirs(os.path.join('output', 'articles'), exist_ok=True)
+    for file_info in files:
+        local_path = os.path.join('output', 'articles', file_info['name'])
+        if os.path.exists(local_path):
+            continue
+        cr = requests.get(file_info['url'], headers=headers)
+        if cr.status_code != 200:
+            continue
+        file_content = base64.b64decode(cr.json()['content']).decode('utf-8')
+        with open(local_path, 'w', encoding='utf-8') as f:
+            f.write(file_content)
+    return True
+
+
 def publish_to_blog(article_path: str, slug: str, blog_dir: str = BLOG_DIR) -> tuple[str, bool, str, str]:
     dest_path = os.path.join(blog_dir, f'{slug}.md')
     os.makedirs(blog_dir, exist_ok=True)

@@ -9,7 +9,7 @@ from flask import Flask, Response, request, jsonify
 from collector import collect_with_progress, save_keywords, safe_filename
 from planner import generate_plan, parse_plan_json, save_plan
 from writer import generate_article, strip_code_block, save_article
-from publisher import extract_slug, publish_to_blog, deploy_to_vercel, push_to_github
+from publisher import extract_slug, publish_to_blog, deploy_to_vercel, push_to_github, save_draft_to_github, sync_drafts_from_github
 
 app = Flask(__name__)
 
@@ -33,6 +33,9 @@ def parse_frontmatter(content: str) -> dict:
 
 def list_articles() -> list:
     files = glob.glob(os.path.join('output', 'articles', 'article_*.md'))
+    if not files:
+        sync_drafts_from_github()
+        files = glob.glob(os.path.join('output', 'articles', 'article_*.md'))
     articles = []
     for path in sorted(files):
         filename = os.path.basename(path)
@@ -166,6 +169,7 @@ def generate():
 
             safe_seed = safe_filename(seed)
             save_article(safe_seed, article)
+            save_draft_to_github(article, f'article_{safe_seed}.md')
             slug = extract_slug(article) or safe_seed
             yield sse({'step': 'done', 'message': '記事の生成が完了しました！',
                        'article': article, 'slug': slug, 'seed': safe_seed})
@@ -204,6 +208,7 @@ def generate():
 
             safe_seed = safe_filename(seed)
             save_article(safe_seed, article)
+            save_draft_to_github(article, f'article_{safe_seed}.md')
             slug = extract_slug(article) or safe_seed
             yield sse({'step': 'done', 'message': '記事の生成が完了しました！',
                        'article': article, 'slug': slug, 'seed': safe_seed})
@@ -236,6 +241,7 @@ def generate():
 
             seed_from_file = plan_filename[len('plan_'):-len('.json')]
             save_article(seed_from_file, article)
+            save_draft_to_github(article, f'article_{seed_from_file}.md')
             slug = extract_slug(article) or seed_from_file
             yield sse({'step': 'done', 'message': '記事の生成が完了しました！',
                        'article': article, 'slug': slug, 'seed': seed_from_file})
@@ -745,6 +751,8 @@ def article_edit(filename):
 @app.route('/api/articles/<filename>/content')
 def article_content(filename):
     path = os.path.join('output', 'articles', filename)
+    if not os.path.exists(path):
+        sync_drafts_from_github()
     if not os.path.exists(path):
         return jsonify({'error': 'not found'}), 404
     with open(path, encoding='utf-8') as f:
