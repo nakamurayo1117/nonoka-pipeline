@@ -678,7 +678,7 @@ async function publishArticle() {
       document.getElementById('pub-status').textContent = 'エラー: ' + d.error;
       document.getElementById('pub-btn').disabled = false;
     } else {
-      document.getElementById('pub-status').textContent = d.deploy_ok ? 'デプロイ完了！' : 'コピー完了（デプロイ失敗）';
+      document.getElementById('pub-status').textContent = (d.deploy_ok || d.github_ok) ? '✅ GitHubに投稿！Vercelが自動デプロイ中...' : 'コピー完了（デプロイ失敗）';
       const a = document.getElementById('result-url');
       a.href = d.url; a.textContent = d.url;
       show('result-card');
@@ -1058,7 +1058,7 @@ async function publishArticle() {{
   if (data.error) {{
     status.textContent = 'エラー: ' + data.error;
   }} else {{
-    status.textContent = data.deploy_ok ? '✅ デプロイ完了！' : 'コピー完了（デプロイ失敗）';
+    status.textContent = (data.deploy_ok || data.github_ok) ? '✅ GitHubに投稿！Vercelが自動デプロイ中...' : 'コピー完了（デプロイ失敗）';
     const box = document.getElementById('result-box');
     const a   = document.getElementById('result-url');
     a.href = data.url; a.textContent = data.url;
