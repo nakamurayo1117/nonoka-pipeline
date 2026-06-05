@@ -49,10 +49,11 @@ def _ensure_output_dirs():
 def deploy_to_vercel() -> tuple[bool, str, str]:
     blog_dir = os.path.expanduser('~/Desktop/nonoka-blog')
     result = subprocess.run(
-        ['vercel', '--prod'],
+        ['vercel', '--prod', '--yes'],
         cwd=blog_dir,
         capture_output=True,
         text=True,
+        timeout=180,
     )
     return result.returncode == 0, result.stdout, result.stderr
 
