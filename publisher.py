@@ -4,6 +4,8 @@ import sys
 import glob
 import shutil
 import re
+import base64
+import requests
 
 BLOG_DIR = os.path.expanduser('~/Desktop/nonoka-blog/src/content/blog')
 
@@ -53,6 +55,50 @@ def deploy_to_vercel() -> tuple[bool, str, str]:
         text=True,
     )
     return result.returncode == 0, result.stdout, result.stderr
+
+
+def push_to_github(article_path: str, slug: str) -> bool:
+    token = os.environ.get('GITHUB_TOKEN')
+    repo = os.environ.get('GITHUB_REPO')
+
+    if not token or not repo:
+        print('GITHUB_TOKENまたはGITHUB_REPOが設定されていません')
+        return False
+
+    with open(article_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    encoded = base64.b64encode(content.encode('utf-8')).decode('utf-8')
+
+    file_path = f'src/content/blog/{slug}.md'
+    url = f'https://api.github.com/repos/{repo}/contents/{file_path}'
+
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+
+    response = requests.get(url, headers=headers)
+    sha = None
+    if response.status_code == 200:
+        sha = response.json().get('sha')
+
+    data = {
+        'message': f'Add article: {slug}',
+        'content': encoded,
+        'branch': 'main'
+    }
+    if sha:
+        data['sha'] = sha
+
+    response = requests.put(url, headers=headers, json=data)
+
+    if response.status_code in [200, 201]:
+        print(f'GitHubにpushしました: {file_path}')
+        return True
+    else:
+        print(f'GitHubへのpush失敗: {response.status_code} {response.text}')
+        return False
 
 
 def publish_to_blog(article_path: str, slug: str, blog_dir: str = BLOG_DIR) -> tuple[str, bool, str, str]:

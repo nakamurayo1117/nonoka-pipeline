@@ -9,7 +9,7 @@ from flask import Flask, Response, request, jsonify
 from collector import collect_with_progress, save_keywords, safe_filename
 from planner import generate_plan, parse_plan_json, save_plan
 from writer import generate_article, strip_code_block, save_article
-from publisher import extract_slug, publish_to_blog, deploy_to_vercel
+from publisher import extract_slug, publish_to_blog, deploy_to_vercel, push_to_github
 
 app = Flask(__name__)
 
@@ -266,13 +266,24 @@ def publish():
         return jsonify({'error': '記事ファイルが見つかりません'}), 404
 
     try:
-        dest_path, deploy_ok, _, deploy_err = publish_to_blog(article_path, slug)
-        return jsonify({
-            'url': f'https://www.oshikatsu-room.com/blog/{slug}',
-            'dest': dest_path,
-            'deploy_ok': deploy_ok,
-            'deploy_err': deploy_err if not deploy_ok else '',
-        })
+        results = {}
+
+        # ローカルnonoka-blogが存在すればコピー＋Vercelデプロイ
+        local_blog = os.path.expanduser('~/Desktop/nonoka-blog')
+        if os.path.exists(local_blog):
+            dest_path, deploy_ok, _, deploy_err = publish_to_blog(article_path, slug)
+            results['dest'] = dest_path
+            results['deploy_ok'] = deploy_ok
+            results['deploy_err'] = deploy_err if not deploy_ok else ''
+
+        # GITHUB_TOKENが設定されていればGitHubにpush
+        github_ok = False
+        if os.environ.get('GITHUB_TOKEN'):
+            github_ok = push_to_github(article_path, slug)
+        results['github_ok'] = github_ok
+
+        results['url'] = f'https://www.oshikatsu-room.com/blog/{slug}'
+        return jsonify(results)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -772,13 +783,24 @@ def article_publish_api(filename):
     meta = parse_frontmatter(saved)
     slug = meta.get('slug') or filename[len('article_'):-len('.md')]
     try:
-        dest_path, deploy_ok, _, deploy_err = publish_to_blog(path, slug)
-        return jsonify({
-            'url': f'https://www.oshikatsu-room.com/blog/{slug}',
-            'dest': dest_path,
-            'deploy_ok': deploy_ok,
-            'deploy_err': deploy_err if not deploy_ok else '',
-        })
+        results = {}
+
+        # ローカルnonoka-blogが存在すればコピー＋Vercelデプロイ
+        local_blog = os.path.expanduser('~/Desktop/nonoka-blog')
+        if os.path.exists(local_blog):
+            dest_path, deploy_ok, _, deploy_err = publish_to_blog(path, slug)
+            results['dest'] = dest_path
+            results['deploy_ok'] = deploy_ok
+            results['deploy_err'] = deploy_err if not deploy_ok else ''
+
+        # GITHUB_TOKENが設定されていればGitHubにpush
+        github_ok = False
+        if os.environ.get('GITHUB_TOKEN'):
+            github_ok = push_to_github(path, slug)
+        results['github_ok'] = github_ok
+
+        results['url'] = f'https://www.oshikatsu-room.com/blog/{slug}'
+        return jsonify(results)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
