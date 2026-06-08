@@ -102,6 +102,28 @@ def generate_plan(seed: str, keywords: list[str], title: str) -> str:
     return message.content[0].text
 
 
+def _fix_json_literals(s):
+    # 文字列リテラル内の改行・タブをエスケープ
+    result = []
+    in_str = False
+    skip = False
+    for ch in s:
+        if skip:
+            result.append(ch); skip = False; continue
+        if ch == "\\" and in_str:
+            skip = True; result.append(ch); continue
+        if ch == "\"":
+            in_str = not in_str; result.append(ch); continue
+        if in_str and ch == "\n":
+            result.append("\\n"); continue
+        if in_str and ch == "\r":
+            continue
+        if in_str and ch == "\t":
+            result.append("\\t"); continue
+        result.append(ch)
+    return "".join(result)
+
+
 def parse_plan_json(text: str) -> dict:
     code_block = re.search(r'```json\s*([\s\S]*?)\s*```', text)
     if code_block:
@@ -118,15 +140,21 @@ def parse_plan_json(text: str) -> dict:
     except json.JSONDecodeError:
         pass
 
-    # 曲引用符・全角引用符をストレートクォートに変換
+    # 曲引用符・全角引用符をストレートクォートに変換（unicodeエスケープで記述）
     cleaned = json_str
-    for old, new in [('“', '"'), ('”', '"'), ('‘', "'"), ('’', "'"),
-                     ('「', '"'), ('」', '"'), ('『', '"'), ('』', '"')]:
+    replacements = [
+        ("\u201c", "\""), ("\u201d", "\""),
+        ("\u2018", "'"), ("\u2019", "'"),
+        ("\u300c", "\""), ("\u300d", "\""),
+        ("\u300e", "\""), ("\u300f", "\""),
+    ]
+    for old, new in replacements:
         cleaned = cleaned.replace(old, new)
     # 末尾カンマ除去
     cleaned = re.sub(r',(\s*[}\]])', r'\1', cleaned)
+    # 文字列内リテラル改行を除去
+    cleaned = _fix_json_literals(cleaned)
     return json.loads(cleaned)
-
 
 def repair_plan_json(broken_text: str) -> str:
     api_key = os.environ.get('ANTHROPIC_API_KEY')
