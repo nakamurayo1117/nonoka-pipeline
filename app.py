@@ -33,10 +33,8 @@ def parse_frontmatter(content: str) -> dict:
 
 
 def list_articles() -> list:
+    sync_drafts_from_github()
     files = glob.glob(os.path.join('output', 'articles', 'article_*.md'))
-    if not files:
-        sync_drafts_from_github()
-        files = glob.glob(os.path.join('output', 'articles', 'article_*.md'))
     articles = []
     for path in sorted(files):
         filename = os.path.basename(path)
