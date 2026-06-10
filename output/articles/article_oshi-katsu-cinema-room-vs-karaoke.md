@@ -1,4 +1,3 @@
-```markdown
 ---
 title: "カラオケで推し活はもう古い！シネマルームでエモい推し活してみませんか？"
 slug: "oshi-katsu-cinema-room-vs-karaoke"
@@ -109,4 +108,3 @@ DEARROOMは**六本木駅から徒歩圏内**にあるから、都内からの�
 気になったらまず予約ページをチェックしてみて！DEARROOM六本木は日程によってすぐ埋まっちゃうから、気になった日は早めに押さえるのがおすすめだよ。推しの誕生日・記念日・友達との鑑賞会…どんな推し活でもお待ちしてます♡
 
 ▶︎ [DEARROOM六本木の予約はこちら](https://spacemarket.com/p/AHbhuUbilSKvoqCw)
-```
