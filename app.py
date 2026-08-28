@@ -3,6 +3,7 @@ import json
 import os
 import queue
 import re
+import sys
 import threading
 from flask import Flask, Response, request, jsonify
 
@@ -12,7 +13,41 @@ from writer import generate_article, strip_code_block, save_article
 from publisher import extract_slug, publish_to_blog, deploy_to_vercel, push_to_github, save_draft_to_github, sync_drafts_from_github
 from planner import repair_plan_json
 
+# ── 認証設定 ────────────────────────────────────────────────────────────────
+APP_PASSWORD = os.environ.get('APP_PASSWORD', '')
+APP_USER = os.environ.get('APP_USER', 'admin')
+
+if not APP_PASSWORD:
+    print(
+        'FATAL: 環境変数 APP_PASSWORD が設定されていません。'
+        ' Render ダッシュボードで APP_PASSWORD を設定してから再起動してください。',
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
 app = Flask(__name__)
+
+
+def _check_auth(username: str, password: str) -> bool:
+    return username == APP_USER and password == APP_PASSWORD
+
+
+def _unauthorized_response() -> Response:
+    return Response(
+        '認証が必要です / Authentication required.',
+        401,
+        {
+            'WWW-Authenticate': 'Basic realm="ののかジェネレーター"',
+            'Content-Type': 'text/plain; charset=utf-8',
+        },
+    )
+
+
+@app.before_request
+def require_auth():
+    auth = request.authorization
+    if not auth or not _check_auth(auth.username, auth.password):
+        return _unauthorized_response()
 
 
 def sse(data: dict) -> str:
