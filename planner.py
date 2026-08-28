@@ -6,10 +6,18 @@ import glob
 import anthropic
 
 
-PROMPT_TEMPLATE = """以下のキーワードリストと記事タイトルをもとに、SEOに強いブログ記事の構成をJSON形式で作って。
+PROMPT_TEMPLATE = """以下の情報をもとに、SEOに強いブログ記事の構成をJSON形式で作って。
 
 キーワードリスト：{keywords}
 記事タイトル：{title}
+
+---
+## DEARROOMファクトシート（facts.md）
+{facts}
+
+## 既存記事一覧（corpus.json）
+{corpus}
+---
 
 ブログの設定：
 - 運営者：ののか（推し活大好きで六本木にシネマルームを作った女子）
@@ -17,10 +25,33 @@ PROMPT_TEMPLATE = """以下のキーワードリストと記事タイトルを�
 - 目的：記事を読んだ人をDEARROOM六本木（シネマルーム）の予約に誘導する
 
 記事の口調ルール：
-- 導入文：読者に語りかける柔らかいです・ます調。SNS的な砕けた表現（「わかる〜！」「笑」「〜だよね」「〜していくね」など）は使わない
+- 導入文：読者に語りかける柔らかいです・ます調。SNS的な砕けた表現（「わかる〜！」「笑」「〜だよね」など）は使わない
 - 本文：です・ます調
 - 見出し：体言止めまたは疑問形
 - まとめ・CTA：落ち着いたトーンで締める。絵文字なし
+
+**intent の判定ルール（必ず1つ選ぶ）**:
+- "local_booking" … 場所比較・生誕祭・誕生日会・貸切上映会・東京/六本木エリア系（予約が自然なゴール）
+- "national_affiliate" … 節約・お金・健康・恋愛・ひとり推し活・遠征など全国読者向けで予約に来ない層が主体
+- "soft" … 上記の中間。LINE/メルマガ等の捕捉を主目的にする記事
+
+**firsthand_block の規則（厳守）**:
+- facts.md の内容から、この記事のキーワードに最も関連する事実を1つ選ぶ
+- content は facts.md に書かれた内容のみ使用すること。創作・推測・誇張は絶対禁止
+- 関連する事実がない（<TODO>のまま、または記事KWと無関係）場合は null にする
+
+**internal_links の規則**:
+- 既存記事一覧から同主題クラスタの関連記事を2〜3本選んで入れる
+- 既存記事がない、または関連記事がなければ空配列
+
+**include_faq の規則**:
+- 疑問解決性・YMYL性が高くFAQが読者に有益な場合のみ true にする
+- 全記事に一律FAQを付けない（テンプレ同一化防止）
+
+**カニバリゼーションチェック**:
+- 既存記事一覧の slug・title と記事KWを照合する
+- 主題が重複する既存記事があれば cannibalization_warning: true と conflicting_slug を出力する
+- 重複がなければ cannibalization_warning: false（conflicting_slug は省略）
 
 出力はJSON形式のみ。余計な説明は不要。
 
@@ -37,7 +68,18 @@ PROMPT_TEMPLATE = """以下のキーワードリストと記事タイトルを�
     }}
   ],
   "outro": "まとめ文（ののか口調）",
-  "cta": "DEARROOM六本木への予約誘導文（ののか口調）"
+  "cta": "DEARROOM六本木への予約誘導文（ののか口調）",
+  "intent": "local_booking",
+  "firsthand_block": {{
+    "type": "price | photo | experience | comparison_table",
+    "content": "facts.mdから選んだ一次情報のテキスト（創作禁止）",
+    "insert_after_h2_index": 2
+  }},
+  "internal_links": [
+    {{ "slug": "既存記事のslug", "anchor": "アンカーテキスト", "reason": "同クラスタ等" }}
+  ],
+  "include_faq": true,
+  "cannibalization_warning": false
 }}"""
 
 
@@ -83,15 +125,45 @@ def load_keywords(path: str) -> tuple[str, list[str]]:
     return data['seed'], data['keywords']
 
 
+def load_facts() -> str:
+    facts_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'facts.md')
+    if not os.path.exists(facts_path):
+        raise FileNotFoundError(
+            'facts.md が見つかりません。リポジトリ直下に facts.md を作成してください。'
+        )
+    with open(facts_path, encoding='utf-8') as f:
+        return f.read()
+
+
+def load_corpus() -> list:
+    corpus_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'corpus.json')
+    if not os.path.exists(corpus_path):
+        return []
+    try:
+        with open(corpus_path, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
 def generate_plan(seed: str, keywords: list[str], title: str) -> str:
     api_key = os.environ.get('ANTHROPIC_API_KEY')
     if not api_key:
         raise RuntimeError('環境変数 ANTHROPIC_API_KEY が設定されていません。')
 
+    facts = load_facts()
+    corpus = load_corpus()
+    corpus_summary = json.dumps(
+        [{'slug': a.get('slug', ''), 'title': a.get('title', ''), 'cluster': a.get('cluster', '')} for a in corpus],
+        ensure_ascii=False,
+    ) if corpus else '[]'
+
     client = anthropic.Anthropic(api_key=api_key)
     prompt = PROMPT_TEMPLATE.format(
         keywords=', '.join(keywords),
         title=title,
+        facts=facts,
+        corpus=corpus_summary,
     )
 
     message = client.messages.create(
@@ -155,6 +227,16 @@ def parse_plan_json(text: str) -> dict:
     # 文字列内リテラル改行を除去
     cleaned = _fix_json_literals(cleaned)
     return json.loads(cleaned)
+
+def fill_plan_defaults(plan: dict) -> dict:
+    """新スキーマフィールドが欠落していた場合のデフォルト補完。パイプラインを落とさない。"""
+    plan.setdefault('intent', 'local_booking')
+    plan.setdefault('firsthand_block', None)
+    plan.setdefault('internal_links', [])
+    plan.setdefault('include_faq', True)
+    plan.setdefault('cannibalization_warning', False)
+    return plan
+
 
 def repair_plan_json(broken_text: str) -> str:
     api_key = os.environ.get('ANTHROPIC_API_KEY')

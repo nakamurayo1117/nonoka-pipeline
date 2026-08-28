@@ -22,7 +22,7 @@ PROMPT_TEMPLATE_SEO = """以下の記事構成をもとに、ブログ記事の�
 - 導入文は読者の悩みや共感から始める。「久しぶりに〜してみたとき」のような体験談スタートではなく「〜を感じたことはありませんか」「〜という経験はないでしょうか」のように読者に語りかける書き出しにする
 - 各セクションに具体的なエピソードや例を入れて読み応えを出す
 - まとめ・CTA：落ち着いたトーンで締める。絵文字なし
-- CTA：構成のctaをもとに、予約リンクは[DEARROOM六本木の予約はこちら](https://spacemarket.com/p/AHbhuUbilSKvoqCw)に置き換える
+- CTA：構成のctaをもとに予約誘導文を書く。リンクは上記「CTAリンクフォーマット」の指示に従いHTMLのaタグ（UTM・data属性付き）で出力する
 - 読みやすい改行・段落を入れる
 - ののかコメント：各H2セクションの末尾に吹き出しを追加する。その見出しの内容に関連した一言を、ののか口調（明るく親しみやすい話し言葉）で書く
 - 目次：構成のh2_sectionsの見出しをもとに自動生成する。アンカーは見出しテキストをそのまま使う（見出し側にアンカー記述不要）
@@ -340,7 +340,7 @@ PROMPT_TEMPLATE_COMPARISON = """以下の記事構成をもとに、比較系ブ
 - 導入文は読者の悩みや共感から始める。「久しぶりに〜してみたとき」のような体験談スタートではなく「〜を感じたことはありませんか」「〜という経験はないでしょうか」のように読者に語りかける書き出しにする
 - 各セクションに具体的なエピソードや例を入れて読み応えを出す
 - まとめ・CTA：落ち着いたトーンで締める。絵文字なし
-- CTA：構成のctaをもとに、予約リンクは[DEARROOM六本木の予約はこちら](https://spacemarket.com/p/AHbhuUbilSKvoqCw)に置き換える
+- CTA：構成のctaをもとに予約誘導文を書く。リンクは上記「CTAリンクフォーマット」の指示に従いHTMLのaタグ（UTM・data属性付き）で出力する
 - 読みやすい改行・段落を入れる
 - ののかコメント：各H2セクションの末尾に吹き出しを追加する。その見出しの内容に関連した一言を、ののか口調（明るく親しみやすい話し言葉）で書く
 - 目次：構成のh2_sectionsの見出しをもとに自動生成する。アンカーは見出しテキストをそのまま使う（見出し側にアンカー記述不要）
@@ -470,12 +470,260 @@ def load_rules() -> str:
     return ''
 
 
+def load_facts() -> str:
+    facts_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'facts.md')
+    if not os.path.exists(facts_path):
+        raise FileNotFoundError(
+            'facts.md が見つかりません。リポジトリ直下に facts.md を作成してください。'
+        )
+    with open(facts_path, encoding='utf-8') as f:
+        return f.read()
+
+
+_INTENT_CTA_RULES = {
+    'local_booking': (
+        '予約CTA（DEARROOM六本木へのリンク）を冒頭・中間・締めの3か所に必ず配置する。'
+        '全CTAに UTMパラメータと data属性（後述）を付与すること。'
+    ),
+    'national_affiliate': (
+        '予約CTAは締め（まとめの後）の1回のみにする。'
+        '冒頭・中間はアフィリエイトリンクや読者メリット情報を中心にする。'
+        'アフィリリンクにも UTMパラメータと data属性を付与すること。'
+    ),
+    'soft': (
+        'LINE/メルマガ等の捕捉CTAを中心に配置する。'
+        '予約CTAは締めに1回のみ。'
+        '捕捉CTAにも UTMパラメータと data属性を付与すること。'
+    ),
+}
+
+
 def get_prompt_template(article_type: str) -> str:
     if article_type == 'pasbecona':
         return PROMPT_TEMPLATE_PASBECONA
     if article_type == 'comparison':
         return PROMPT_TEMPLATE_COMPARISON
     return PROMPT_TEMPLATE_SEO
+
+
+# ── 決定論的後処理 ────────────────────────────────────────────────────────────
+_SPACEMARKET_URL = 'https://spacemarket.com/p/AHbhuUbilSKvoqCw'
+
+
+def _inject_frontmatter_intent(article: str, intent: str) -> str:
+    """LLMがintentを落とした場合にfrontmatterへ決定論的に注入する。"""
+    if re.search(r'^intent:', article, re.MULTILINE):
+        return article  # already present
+    def _add(m: re.Match) -> str:
+        fm = m.group(1).rstrip('\n')
+        return f'{fm}\nintent: "{intent}"\n{m.group(2)}'
+    return re.sub(r'^(---\n[\s\S]*?)(^---)', _add, article, count=1, flags=re.MULTILINE)
+
+
+def _enforce_cta_attributes(article: str, slug: str) -> str:
+    """
+    後処理: spacemarket URLへの全リンクをUTM付きHTML<a>に統一する。
+    Markdown/HTML問わず文書内の出現順に top/mid/bottom を割り当てる
+    （2ステップ処理だと Markdown→HTML の順序がずれるため、位置を先に収集して逆順置換）。
+    """
+    _pos_seq = ['top', 'mid', 'bottom']
+
+    md_pat   = re.compile(r'\[([^\]]+)\]\(https://spacemarket\.com/p/[^)]+\)')
+    html_pat = re.compile(
+        r'<a\s+([^>]*href=["\']https://spacemarket\.com/p/[^"\']*["\'][^>]*)>',
+        re.DOTALL,
+    )
+
+    # 全CTAを文書内の出現位置順に収集
+    spans: list[tuple[int, int, str, re.Match]] = []
+    for m in md_pat.finditer(article):
+        spans.append((m.start(), m.end(), 'md', m))
+    for m in html_pat.finditer(article):
+        spans.append((m.start(), m.end(), 'html', m))
+    spans.sort(key=lambda x: x[0])
+
+    # 後ろから置換（文字位置がずれないよう逆順）
+    for i, (start, end, typ, m) in reversed(list(enumerate(spans))):
+        pos = _pos_seq[min(i, 2)]
+        utm = f'utm_source=blog&utm_medium=cta&utm_campaign={slug}&utm_content={pos}'
+
+        if typ == 'md':
+            anchor = m.group(1)
+            replacement = (
+                f'<a href="{_SPACEMARKET_URL}?{utm}"'
+                f' data-cta="booking" data-pos="{pos}" data-article="{slug}">'
+                f'{anchor}</a>'
+            )
+        else:
+            attrs = m.group(1)
+            if 'data-cta' in attrs:
+                continue  # already fully patched
+            href_m = re.search(r'href=["\']([^"\']+)["\']', attrs)
+            raw_href = href_m.group(1).split('?')[0] if href_m else _SPACEMARKET_URL
+            replacement = (
+                f'<a href="{raw_href}?{utm}"'
+                f' data-cta="booking" data-pos="{pos}" data-article="{slug}">'
+            )
+
+        article = article[:start] + replacement + article[end:]
+
+    return article
+
+
+def postprocess_article(article: str, slug: str, intent: str) -> str:
+    """frontmatter intent注入 + CTA属性付与の決定論的後処理。"""
+    article = _inject_frontmatter_intent(article, intent)
+    article = _enforce_cta_attributes(article, slug)
+    return article
+
+
+# ── 禁止コンテンツ検出（決定論的・後処理） ────────────────────────────────────
+
+def _mask_exclusion_zones(article: str) -> str:
+    """
+    検査スコープ外領域を空白で埋め、行番号を保持したまま誤検知対象外にする。
+    除外: frontmatter / <a>タグのhref属性値
+    """
+    masked = list(article)
+
+    def blank(start: int, end: int) -> None:
+        for i in range(start, end):
+            if masked[i] != '\n':
+                masked[i] = ' '
+
+    # frontmatter（pubDate等の数値を評価スコアと誤検知しないため）
+    fm = re.match(r'^---\n[\s\S]*?\n---\n?', article)
+    if fm:
+        blank(0, fm.end())
+
+    # <a>タグのhref値（UTMパラメータの数字を金額・件数と誤検知しないため）
+    for m in re.finditer(r'<a\b[^>]*>', article, re.DOTALL):
+        tag_start = m.start()
+        for hm in re.finditer(r'href=(["\'])([^"\']*)\1', m.group(0)):
+            blank(tag_start + hm.start(2), tag_start + hm.end(2))
+
+    # nonoka-comment ブロック（ののかの演出コメント・事実検証不要）
+    _nc_pat = re.compile(
+        r'<div\s+class=["\']nonoka-comment["\'][^>]*>'
+        r'(?:(?!</div>)[\s\S])*</div>'
+        r'(?:(?!</div>)[\s\S])*</div>',
+        re.DOTALL,
+    )
+    for m in _nc_pat.finditer(article):
+        blank(m.start(), m.end())
+
+    return ''.join(masked)
+
+
+def detect_forbidden_content(article: str, facts_text: str) -> list[dict]:
+    """
+    生成記事から禁止コンテンツを検出して Finding リストを返す。
+    自動削除・修正はしない（検出・警告のみ）。
+
+    Finding 構造:
+      category:     "rating" | "review_count" | "price" | "review_fabrication"
+      severity:     "block" | "warn"
+      matched_text: 検出した実文字列
+      line_no:      該当行番号（1始まり）
+      message:      対処メッセージ
+    """
+    def _line_no(pos: int) -> int:
+        return article[:pos].count('\n') + 1
+
+    def _in_facts(text: str) -> bool:
+        return text.strip() in facts_text
+
+    masked = _mask_exclusion_zones(article)
+    findings: list[dict] = []
+
+    # ── Category 1: 評価スコア（block）──────────────────────────────────────
+    _RATING_PATS = [
+        re.compile(r'[★☆⭐]\s*\d+\.?\d*'),
+        re.compile(r'評価\s*\d+\.\d+'),
+        re.compile(r'(?<!\d)\d+\.\d+\s*点(?!満点)'),
+        re.compile(r'(?<!\d)\d+\.\d+\s*[/／]\s*5(?!\d)'),
+        re.compile(r'5\s*点満点中\s*\d+\.\d+'),
+    ]
+    for pat in _RATING_PATS:
+        for m in pat.finditer(masked):
+            text = article[m.start():m.end()].strip()
+            if _in_facts(text):
+                continue
+            findings.append({
+                'category': 'rating',
+                'severity': 'block',
+                'matched_text': text,
+                'line_no': _line_no(m.start()),
+                'message': 'facts.md非掲載の評価スコアです。削除し「スペースマーケットで高い評価をいただいています」等の定性表現に置換してください。',
+            })
+
+    # ── Category 2: レビュー件数（block）────────────────────────────────────
+    _COUNT_PATS = [
+        re.compile(r'\d+\s*件.{0,15}(レビュー|口コミ|評価|の声|コメント|投票)', re.DOTALL),
+        re.compile(r'(レビュー|口コミ|評価|の声|コメント|投票).{0,15}\d+\s*件', re.DOTALL),
+        re.compile(r'\d+\s*件の(レビュー|口コミ|評価)'),
+    ]
+    for pat in _COUNT_PATS:
+        for m in pat.finditer(masked):
+            text = article[m.start():m.end()].strip()
+            if _in_facts(text):
+                continue
+            findings.append({
+                'category': 'review_count',
+                'severity': 'block',
+                'matched_text': text,
+                'line_no': _line_no(m.start()),
+                'message': 'レビュー件数が記載されています。件数は変動するため削除し、定性表現に置換してください。',
+            })
+
+    # ── Category 3: 金額（warn）──────────────────────────────────────────────
+    _PRICE_PATS = [
+        re.compile(r'¥\s*\d[\d,]*'),
+        re.compile(r'\d{1,3}(?:,\d{3})+\s*円'),
+        re.compile(r'(?<!\d)\d{4,}\s*円'),
+        re.compile(r'(?<!\d)\d+\s*万円'),
+    ]
+    _PRICE_ALLOW = re.compile(r'^(0\s*円|無料)')
+    for pat in _PRICE_PATS:
+        for m in pat.finditer(masked):
+            text = article[m.start():m.end()].strip()
+            if _PRICE_ALLOW.match(text) or _in_facts(text):
+                continue
+            findings.append({
+                'category': 'price',
+                'severity': 'warn',
+                'matched_text': text,
+                'line_no': _line_no(m.start()),
+                'message': '具体的な金額が記載されています。料金は変動するため削除し、予約ページへの誘導に置換してください。',
+            })
+
+    # ── Category 4: 口コミ創作疑い（warn）───────────────────────────────────
+    _QUOTE_CLUSTER = re.compile(r'(?:「[^」]{5,}」[\s、。]*){3,}')
+    _PRESENTATION  = re.compile(r'という声|寄せられ|好評|多く寄せ|コメントが|感想|口コミ')
+    for m in _QUOTE_CLUSTER.finditer(masked):
+        ctx = masked[max(0, m.start() - 100):min(len(masked), m.end() + 100)]
+        if not _PRESENTATION.search(ctx):
+            continue
+        text = article[m.start():m.end()].strip()
+        short = text[:80] + ('…' if len(text) > 80 else '')
+        findings.append({
+            'category': 'review_fabrication',
+            'severity': 'warn',
+            'matched_text': short,
+            'line_no': _line_no(m.start()),
+            'message': '複数の口コミが並んでいます。実在するレビューのみ引用可。創作口コミは削除してください。',
+        })
+
+    # 重複除去（同一 category + line_no + matched_text）
+    seen: set[tuple] = set()
+    unique: list[dict] = []
+    for f in findings:
+        key = (f['category'], f['line_no'], f['matched_text'])
+        if key not in seen:
+            seen.add(key)
+            unique.append(f)
+
+    return unique
 
 
 def list_plan_files() -> list[str]:
@@ -508,14 +756,98 @@ def generate_article(plan: dict) -> str:
     if not api_key:
         raise RuntimeError('環境変数 ANTHROPIC_API_KEY が設定されていません。')
 
+    facts = load_facts()
     client = anthropic.Anthropic(api_key=api_key)
     article_type = plan.get('article_type', 'seo')
+    intent = plan.get('intent', 'local_booking')
+    slug = plan.get('slug', 'unknown')
+    include_faq = plan.get('include_faq', True)
+    firsthand_block = plan.get('firsthand_block')
+    internal_links = plan.get('internal_links', [])
+
     rules = load_rules()
     template = get_prompt_template(article_type)
+
     rules_section = f'# 執筆ルール（必ず遵守すること）\n\n{rules}\n\n---\n\n' if rules else ''
-    prompt = rules_section + template.format(
-        plan_json=json.dumps(plan, ensure_ascii=False, indent=2),
-        today=str(date.today()),
+
+    facts_section = (
+        '# DEARROOMファクトシート（使用可能な一次情報・厳守）\n'
+        '以下に記載された内容だけが事実として使用可能。\n'
+        '料金・設備スペック・アクセス・イベント実績・口コミ等のファクトは、\n'
+        'このシートに書かれた内容のみ使用し、**ここに書かれていない事実を新規に創作・推測・誇張することは絶対禁止**。\n'
+        'facts.md に該当記事KWに関連する情報が無い（または<TODO>のまま）場合は、\n'
+        'firsthand_block を null にして事実の創作を行わないこと。\n\n'
+        + facts
+        + '\n\n---\n\n'
+    )
+
+    firsthand_section = ''
+    if firsthand_block:
+        idx = firsthand_block.get('insert_after_h2_index', 2)
+        content = firsthand_block.get('content', '')
+        firsthand_section = (
+            f'# 一次情報ブロック（必ず本文に展開すること）\n'
+            f'{idx + 1}番目のH2セクションの後に、以下の一次情報を文脈に合わせて1〜2段落で自然に展開する。\n'
+            f'内容を改変・誇張しないこと。facts.md の内容のまま具体的に伝えること。\n\n'
+            f'{content}\n\n---\n\n'
+        )
+
+    faq_section = (
+        '# FAQセクション\n'
+        + ('よくある質問セクションを含める（記事のキーワードに関連した質問3〜4問、Q./A.形式）。\n'
+           if include_faq else
+           'FAQセクションは含めない（include_faq=false）。\n')
+        + '\n---\n\n'
+    )
+
+    cta_rule = _INTENT_CTA_RULES.get(intent, _INTENT_CTA_RULES['local_booking'])
+    utm_section = (
+        f'# CTAリンクフォーマット（すべてのCTA・アフィリリンクに適用・厳守）\n'
+        f'intent: {intent}\n'
+        f'CTA方針: {cta_rule}\n\n'
+        f'CTA/アフィリリンクはMarkdownリンクではなく生HTMLのaタグで出力し、以下を必ず付与する:\n'
+        f'- href に UTMパラメータ: ?utm_source=blog&utm_medium=cta&utm_campaign={slug}&utm_content=<top|mid|bottom>\n'
+        f'- data-cta="booking|affiliate|soft"\n'
+        f'- data-pos="top|mid|bottom"\n'
+        f'- data-article="{slug}"\n\n'
+        f'出力例（冒頭CTA）:\n'
+        f'<a href="https://spacemarket.com/p/AHbhuUbilSKvoqCw?utm_source=blog&utm_medium=cta&utm_campaign={slug}&utm_content=top"\n'
+        f'   data-cta="booking" data-pos="top" data-article="{slug}">DEARROOM六本木の予約はこちら</a>\n'
+        f'\n---\n\n'
+    )
+
+    frontmatter_section = (
+        f'# frontmatterへの追記（必須）\n'
+        f'生成する記事のfrontmatterに以下フィールドを必ず含めること:\n'
+        f'intent: "{intent}"\n'
+        f'\n---\n\n'
+    )
+
+    internal_links_section = ''
+    if internal_links:
+        links_text = '\n'.join(
+            f'- [{l.get("anchor", l.get("slug", ""))}](/blog/{l.get("slug", "")}) （{l.get("reason", "")}）'
+            for l in internal_links
+        )
+        internal_links_section = (
+            '# 内部リンク（本文中に自然な形で配置すること）\n'
+            '以下の関連記事を本文中の適切な箇所にMarkdownリンクとして1〜2本挿入する:\n\n'
+            + links_text
+            + '\n\n---\n\n'
+        )
+
+    prompt = (
+        rules_section
+        + facts_section
+        + firsthand_section
+        + faq_section
+        + utm_section
+        + frontmatter_section
+        + internal_links_section
+        + template.format(
+            plan_json=json.dumps(plan, ensure_ascii=False, indent=2),
+            today=str(date.today()),
+        )
     )
 
     message = client.messages.create(
@@ -523,7 +855,10 @@ def generate_article(plan: dict) -> str:
         max_tokens=8000,
         messages=[{'role': 'user', 'content': prompt}],
     )
-    return message.content[0].text
+    raw = strip_code_block(message.content[0].text)
+    article = postprocess_article(raw, slug, intent)
+    findings = detect_forbidden_content(article, facts)
+    return article, findings
 
 
 def strip_code_block(text: str) -> str:
@@ -557,7 +892,7 @@ def main():
 
     print('\n記事本文を生成中...')
     try:
-        article_raw = generate_article(plan)
+        article_raw, findings = generate_article(plan)
     except RuntimeError as e:
         print(f'エラー：{e}')
         sys.exit(1)
@@ -565,6 +900,12 @@ def main():
     article = strip_code_block(article_raw)
     out_path = save_article(seed, article)
     print(f'完了！{out_path} に保存しました。')
+    if findings:
+        print(f'\n⚠️ 品質チェック: {len(findings)}件の問題が検出されました')
+        for f in findings:
+            icon = '🔴' if f['severity'] == 'block' else '🟡'
+            print(f'  {icon} [{f["category"]}] 行{f["line_no"]}: {f["matched_text"][:60]}')
+            print(f'     → {f["message"]}')
 
 
 if __name__ == '__main__':
