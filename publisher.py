@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -5,6 +6,7 @@ import glob
 import shutil
 import re
 import base64
+from datetime import date
 import requests
 
 BLOG_DIR = os.path.expanduser('~/Desktop/nonoka-blog/src/content/blog')
@@ -96,10 +98,66 @@ def push_to_github(article_path: str, slug: str) -> bool:
 
     if response.status_code in [200, 201]:
         print(f'GitHubにpushしました: {file_path}')
+        _update_corpus(article_path, slug)
         return True
     else:
         print(f'GitHubへのpush失敗: {response.status_code} {response.text}')
         return False
+
+
+def _parse_frontmatter_field(content: str, key: str) -> str:
+    import re as _re
+    m = _re.search(rf'^{key}:\s*["\']?(.+?)["\']?\s*$', content, _re.MULTILINE)
+    return m.group(1).strip() if m else ''
+
+
+def _update_corpus(article_path: str, slug: str) -> None:
+    corpus_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'corpus.json')
+    try:
+        with open(article_path, encoding='utf-8') as f:
+            content = f.read()
+    except Exception:
+        return
+
+    entry = {
+        'slug': slug,
+        'title': _parse_frontmatter_field(content, 'title'),
+        'primary_kw': slug.replace('-', ' '),
+        'cluster': '',
+        'intent': _parse_frontmatter_field(content, 'intent'),
+        'pub_date': str(date.today()),
+    }
+
+    try:
+        with open(corpus_path, encoding='utf-8') as f:
+            corpus = json.load(f)
+    except Exception:
+        corpus = []
+
+    corpus = [a for a in corpus if a.get('slug') != slug]
+    corpus.append(entry)
+
+    with open(corpus_path, 'w', encoding='utf-8') as f:
+        json.dump(corpus, f, ensure_ascii=False, indent=2)
+
+    # corpus.json を pipeline リポジトリにも保存して永続化
+    token = os.environ.get('GITHUB_TOKEN')
+    repo = os.environ.get('PIPELINE_GITHUB_REPO')
+    if token and repo:
+        try:
+            encoded = base64.b64encode(
+                json.dumps(corpus, ensure_ascii=False, indent=2).encode('utf-8')
+            ).decode('utf-8')
+            url = f'https://api.github.com/repos/{repo}/contents/corpus.json'
+            headers = {'Authorization': f'token {token}', 'Accept': 'application/vnd.github.v3+json'}
+            existing = requests.get(url, headers=headers)
+            sha = existing.json().get('sha') if existing.status_code == 200 else None
+            data: dict = {'message': f'Update corpus: add {slug}', 'content': encoded, 'branch': 'main'}
+            if sha:
+                data['sha'] = sha
+            requests.put(url, headers=headers, json=data)
+        except Exception as e:
+            print(f'corpus.json のGitHub保存失敗（無視）: {e}')
 
 
 def save_draft_to_github(content: str, filename: str) -> bool:
