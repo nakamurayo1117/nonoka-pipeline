@@ -915,6 +915,15 @@ def generate_article(plan: dict) -> str:
             + '\n\n---\n\n'
         )
 
+    equipment_section = (
+        '# 設備情報への誘導\n'
+        'DEARROOMの設備・料金に詳しく触れるセクションがある場合、\n'
+        'その末尾に以下のリンクを1回だけ挿入する。\n\n'
+        '**▶ 設備・料金の詳細はこちら：[DEARROOM六本木の設備・スペック](https://www.oshikatsu-room.com/dearroom/)**\n\n'
+        '設備に言及しない記事では挿入不要。\n'
+        '\n---\n\n'
+    )
+
     prompt = (
         rules_section
         + facts_section
@@ -923,6 +932,7 @@ def generate_article(plan: dict) -> str:
         + utm_section
         + frontmatter_section
         + internal_links_section
+        + equipment_section
         + template.format(
             plan_json=json.dumps(plan, ensure_ascii=False, indent=2),
             today=str(date.today()),
