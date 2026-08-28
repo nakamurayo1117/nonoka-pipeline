@@ -37,7 +37,7 @@ def _unauthorized_response() -> Response:
         '認証が必要です / Authentication required.',
         401,
         {
-            'WWW-Authenticate': 'Basic realm="ののかジェネレーター"',
+            'WWW-Authenticate': 'Basic realm="nonoka-pipeline"',
             'Content-Type': 'text/plain; charset=utf-8',
         },
     )
