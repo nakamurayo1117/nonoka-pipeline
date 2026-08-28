@@ -11,7 +11,7 @@ from collector import collect_with_progress, save_keywords, safe_filename
 from planner import generate_plan, parse_plan_json, save_plan
 from writer import generate_article, strip_code_block, save_article
 from publisher import extract_slug, publish_to_blog, deploy_to_vercel, push_to_github, save_draft_to_github, sync_drafts_from_github
-from planner import repair_plan_json
+from planner import repair_plan_json, fill_plan_defaults
 
 # ── 認証設定 ────────────────────────────────────────────────────────────────
 APP_PASSWORD = os.environ.get('APP_PASSWORD', '')
@@ -201,6 +201,10 @@ def generate():
                 except Exception as e2:
                     yield sse({'step': 'error', 'message': f'[planner] JSONパース失敗: {type(e2).__name__}: {e2}'}); return
             plan['article_type'] = article_type
+            fill_plan_defaults(plan)
+            if plan.get('cannibalization_warning'):
+                yield sse({'step': 'collect_warn',
+                           'message': f'⚠️ カニバリゼーション警告: 既存記事「{plan.get("conflicting_slug", "?")}」と主題が重複している可能性があります。内容を確認してから投稿してください。'})
             save_plan(seed, plan)
             yield sse({'step': 'plan_done', 'message': '記事構成の生成完了！'})
 
@@ -208,7 +212,9 @@ def generate():
             yield sse({'step': 'write_start', 'message': 'AIで記事本文を執筆中...'})
             _wr, _we = [], []
             def _run_write1():
-                try: _wr.append(strip_code_block(generate_article(plan)))
+                try:
+                    _art, _fnd = generate_article(plan)
+                    _wr.append((strip_code_block(_art), _fnd))
                 except Exception as e: _we.append(e)
             t = threading.Thread(target=_run_write1, daemon=True); t.start()
             dot = 0
@@ -219,14 +225,20 @@ def generate():
                     yield sse({'step': 'write_progress', 'message': f'記事を執筆中{"…" * dot}'})
             if _we:
                 yield sse({'step': 'error', 'message': f'記事の生成に失敗しました: {_we[0]}'}); return
-            article = _wr[0]
+            article, findings = _wr[0]
 
             safe_seed = safe_filename(seed)
             save_article(safe_seed, article)
             save_draft_to_github(article, f'article_{safe_seed}.md')
             slug = extract_slug(article) or safe_seed
+            if findings:
+                block_n = sum(1 for f in findings if f['severity'] == 'block')
+                warn_n  = sum(1 for f in findings if f['severity'] == 'warn')
+                yield sse({'step': 'collect_warn',
+                           'message': f'⚠️ 品質チェック: 🔴禁止表現 {block_n}件 / 🟡要確認 {warn_n}件 — プレビューで確認してください'})
             yield sse({'step': 'done', 'message': '記事の生成が完了しました！',
-                       'article': article, 'slug': slug, 'seed': safe_seed})
+                       'article': article, 'slug': slug, 'seed': safe_seed,
+                       'findings': findings})
 
         # ── Mode 2: 構成生成からスタート ─────────────────────────────
         elif mode == 2:
@@ -261,13 +273,19 @@ def generate():
                 except Exception as e2:
                     yield sse({'step': 'error', 'message': f'[planner] JSONパース失敗: {type(e2).__name__}: {e2}'}); return
             plan['article_type'] = article_type
+            fill_plan_defaults(plan)
+            if plan.get('cannibalization_warning'):
+                yield sse({'step': 'collect_warn',
+                           'message': f'⚠️ カニバリゼーション警告: 既存記事「{plan.get("conflicting_slug", "?")}」と主題が重複している可能性があります。内容を確認してから投稿してください。'})
             save_plan(seed, plan)
             yield sse({'step': 'plan_done', 'message': '記事構成の生成完了！'})
 
             yield sse({'step': 'write_start', 'message': 'AIで記事本文を執筆中...'})
             _wr2, _we2 = [], []
             def _run_write2():
-                try: _wr2.append(strip_code_block(generate_article(plan)))
+                try:
+                    _art, _fnd = generate_article(plan)
+                    _wr2.append((strip_code_block(_art), _fnd))
                 except Exception as e: _we2.append(e)
             t = threading.Thread(target=_run_write2, daemon=True); t.start()
             dot = 0
@@ -278,14 +296,20 @@ def generate():
                     yield sse({'step': 'write_progress', 'message': f'記事を執筆中{"…" * dot}'})
             if _we2:
                 yield sse({'step': 'error', 'message': f'記事の生成に失敗しました: {_we2[0]}'}); return
-            article = _wr2[0]
+            article, findings = _wr2[0]
 
             safe_seed = safe_filename(seed)
             save_article(safe_seed, article)
             save_draft_to_github(article, f'article_{safe_seed}.md')
             slug = extract_slug(article) or safe_seed
+            if findings:
+                block_n = sum(1 for f in findings if f['severity'] == 'block')
+                warn_n  = sum(1 for f in findings if f['severity'] == 'warn')
+                yield sse({'step': 'collect_warn',
+                           'message': f'⚠️ 品質チェック: 🔴禁止表現 {block_n}件 / 🟡要確認 {warn_n}件 — プレビューで確認してください'})
             yield sse({'step': 'done', 'message': '記事の生成が完了しました！',
-                       'article': article, 'slug': slug, 'seed': safe_seed})
+                       'article': article, 'slug': slug, 'seed': safe_seed,
+                       'findings': findings})
 
         # ── Mode 3: 執筆のみ ──────────────────────────────────────────
         elif mode == 3:
@@ -302,13 +326,16 @@ def generate():
                 yield sse({'step': 'error', 'message': f'構成ファイルの読み込みに失敗しました: {e}'})
                 return
 
+            fill_plan_defaults(plan)
             plan_title = plan.get('title', plan_filename)
             yield sse({'step': 'plan_load', 'message': f'構成「{plan_title}」を読み込みました'})
 
             yield sse({'step': 'write_start', 'message': 'AIで記事本文を執筆中...'})
             _wr3, _we3 = [], []
             def _run_write3():
-                try: _wr3.append(strip_code_block(generate_article(plan)))
+                try:
+                    _art, _fnd = generate_article(plan)
+                    _wr3.append((strip_code_block(_art), _fnd))
                 except Exception as e: _we3.append(e)
             t = threading.Thread(target=_run_write3, daemon=True); t.start()
             dot = 0
@@ -319,14 +346,20 @@ def generate():
                     yield sse({'step': 'write_progress', 'message': f'記事を執筆中{"…" * dot}'})
             if _we3:
                 yield sse({'step': 'error', 'message': f'記事の生成に失敗しました: {_we3[0]}'}); return
-            article = _wr3[0]
+            article, findings = _wr3[0]
 
             seed_from_file = plan_filename[len('plan_'):-len('.json')]
             save_article(seed_from_file, article)
             save_draft_to_github(article, f'article_{seed_from_file}.md')
             slug = extract_slug(article) or seed_from_file
+            if findings:
+                block_n = sum(1 for f in findings if f['severity'] == 'block')
+                warn_n  = sum(1 for f in findings if f['severity'] == 'warn')
+                yield sse({'step': 'collect_warn',
+                           'message': f'⚠️ 品質チェック: 🔴禁止表現 {block_n}件 / 🟡要確認 {warn_n}件 — プレビューで確認してください'})
             yield sse({'step': 'done', 'message': '記事の生成が完了しました！',
-                       'article': article, 'slug': slug, 'seed': seed_from_file})
+                       'article': article, 'slug': slug, 'seed': seed_from_file,
+                       'findings': findings})
 
     return Response(
         stream(),
@@ -504,6 +537,15 @@ HTML = """<!DOCTYPE html>
       .btn { width: 100%; text-align: center; }
       .pub-row { flex-direction: column; }
     }
+    /* Findings panel */
+    #findings-panel { margin: 0 0 1rem; }
+    .findings-head { font-weight: 700; font-size: .9rem; margin-bottom: .65rem; padding: .6rem .9rem; background: #fff8e1; border-radius: 8px; border-left: 4px solid #f39c12; }
+    .finding-item { padding: .6rem 1rem; border-radius: 8px; margin-bottom: .4rem; font-size: .82rem; }
+    .finding-block { background: #fff0f0; border-left: 4px solid #e74c3c; }
+    .finding-warn  { background: #fffbef; border-left: 4px solid #f39c12; }
+    .finding-cat   { font-weight: 700; font-size: .76rem; color: #555; margin-bottom: .15rem; }
+    .finding-match { font-family: monospace; background: rgba(0,0,0,.07); padding: 1px 5px; border-radius: 3px; word-break: break-all; }
+    .finding-msg   { color: #666; margin-top: .2rem; line-height: 1.5; }
   </style>
 </head>
 <body>
@@ -593,6 +635,7 @@ HTML = """<!DOCTYPE html>
 
   <div class="card hidden" id="prev-card">
     <h2>記事プレビュー</h2>
+    <div id="findings-panel" class="hidden"></div>
     <div class="preview" id="preview"></div>
     <p class="editor-label">Markdown編集</p>
     <textarea id="editor" spellcheck="false"></textarea>
@@ -610,7 +653,7 @@ HTML = """<!DOCTYPE html>
 
 </div>
 <script>
-let G = { slug: '', seed: '', article: '' };
+let G = { slug: '', seed: '', article: '', findings: [] };
 let currentMode = 1;
 
 function switchMode(mode) {
@@ -752,9 +795,10 @@ function handle(d) {
       badge('b3','done');
       addLog('生成完了！', 'ok');
       document.getElementById('prog-heading').textContent = '生成完了！';
-      G = { slug: d.slug, seed: d.seed, article: d.article };
+      G = { slug: d.slug, seed: d.seed, article: d.article, findings: d.findings || [] };
       document.getElementById('preview').innerHTML = marked.parse(d.article);
       document.getElementById('editor').value = d.article;
+      renderFindings(G.findings);
       document.getElementById('pub-btn').disabled = false;
       document.getElementById('pub-status').textContent = '';
       show('prev-card');
@@ -768,7 +812,38 @@ function handle(d) {
   }
 }
 
+function renderFindings(findings) {
+  const panel = document.getElementById('findings-panel');
+  if (!findings || !findings.length) { panel.classList.add('hidden'); return; }
+  const blocks = findings.filter(f => f.severity === 'block');
+  const warns  = findings.filter(f => f.severity === 'warn');
+  const CAT = { rating: '評価スコア', review_count: 'レビュー件数', price: '金額', review_fabrication: '口コミ創作疑い' };
+  let html = '<div class="findings-head">⚠️ 品質チェック: ';
+  if (blocks.length) html += '<span style="color:#e74c3c">🔴 禁止表現 ' + blocks.length + '件</span> ';
+  if (warns.length)  html += '<span style="color:#d68910">🟡 要確認 ' + warns.length + '件</span>';
+  html += '</div>';
+  for (const f of findings) {
+    const cls  = f.severity === 'block' ? 'finding-block' : 'finding-warn';
+    const icon = f.severity === 'block' ? '🔴' : '🟡';
+    html += '<div class="finding-item ' + cls + '">';
+    html += '<div class="finding-cat">' + icon + ' ' + (CAT[f.category] || f.category) + '（' + f.line_no + '行目）</div>';
+    html += '<div>検出: <span class="finding-match">' + escHtml(f.matched_text) + '</span></div>';
+    html += '<div class="finding-msg">' + escHtml(f.message) + '</div>';
+    html += '</div>';
+  }
+  panel.innerHTML = html;
+  panel.classList.remove('hidden');
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 async function publishArticle() {
+  const blocks = (G.findings || []).filter(f => f.severity === 'block');
+  if (blocks.length > 0) {
+    const items = blocks.map(f => '• [' + f.category + '] ' + f.matched_text).join('\\n');
+    if (!confirm('⚠️ 禁止表現が ' + blocks.length + ' 件未解決です。\\n\\n' + items + '\\n\\nこのまま公開しますか？')) return;
+  }
   document.getElementById('pub-btn').disabled = true;
   document.getElementById('pub-status').textContent = '投稿・デプロイ中...';
   const article = document.getElementById('editor').value;
