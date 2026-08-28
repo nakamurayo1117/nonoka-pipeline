@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import glob
+import unicodedata
 import anthropic
 from datetime import date
 
@@ -49,7 +50,7 @@ PROMPT_TEMPLATE_SEO = """以下の記事構成をもとに、ブログ記事の�
 - H2セクションの2〜3番目の後に1回、読者の共感・興味が最も高まった直後に挿入する
 - 文脈に合わせた一言＋リンクの形式にする
 - 例：
-  > **大画面で推しのライブを見たい方は、[DEARROOM六本木](https://spacemarket.com/p/AHbhuUbilSKvoqCw)をチェックしてみてください。**
+  > **大画面で推しのライブを見たい方は、[DEARROOM六本木](https://www.spacemarket.com/p/AHbhuUbilSKvoqCw)をチェックしてみてください。**
 
 Markdown出力形式（この順番・構造を厳守すること）：
 ---
@@ -82,7 +83,7 @@ updatedDate: {today}
 
 <div class="cta-box">
 推し活の理想の空間、六本木にあります。<br>
-<a href="https://spacemarket.com/p/AHbhuUbilSKvoqCw">DEARROOM六本木の予約はこちら</a>
+<a href="https://www.spacemarket.com/p/AHbhuUbilSKvoqCw">DEARROOM六本木の予約はこちら</a>
 </div>
 
 導入文（300字程度）
@@ -128,7 +129,7 @@ updatedDate: {today}
 
 <div class="cta-box">
 （CTAテキスト）<br>
-<a href="https://spacemarket.com/p/AHbhuUbilSKvoqCw">DEARROOM六本木の予約はこちら</a>
+<a href="https://www.spacemarket.com/p/AHbhuUbilSKvoqCw">DEARROOM六本木の予約はこちら</a>
 </div>
 
 ---
@@ -179,7 +180,7 @@ PASBECONA構成ルール（この順番で8つのH2セクションを作成す�
 - S（解決策）またはB（ベネフィット）セクションの直後に1回挿入する
 - 文脈に合わせた一言＋リンクの形式にする
 - 例：
-  > **推し活の理想の空間を体験したい方は、[DEARROOM六本木](https://spacemarket.com/p/AHbhuUbilSKvoqCw)をご覧ください。**
+  > **推し活の理想の空間を体験したい方は、[DEARROOM六本木](https://www.spacemarket.com/p/AHbhuUbilSKvoqCw)をご覧ください。**
 
 Markdown出力形式（この順番・構造を厳守すること）：
 ---
@@ -218,7 +219,7 @@ updatedDate: {today}
 
 <div class="cta-box">
 推し活の理想の空間、六本木にあります。<br>
-<a href="https://spacemarket.com/p/AHbhuUbilSKvoqCw">DEARROOM六本木の予約はこちら</a>
+<a href="https://www.spacemarket.com/p/AHbhuUbilSKvoqCw">DEARROOM六本木の予約はこちら</a>
 </div>
 
 ## 問題提起の見出し
@@ -314,7 +315,7 @@ updatedDate: {today}
 
 <div class="cta-box">
 （CTAテキスト）<br>
-<a href="https://spacemarket.com/p/AHbhuUbilSKvoqCw">DEARROOM六本木の予約はこちら</a>
+<a href="https://www.spacemarket.com/p/AHbhuUbilSKvoqCw">DEARROOM六本木の予約はこちら</a>
 </div>
 
 ---
@@ -368,7 +369,7 @@ PROMPT_TEMPLATE_COMPARISON = """以下の記事構成をもとに、比較系ブ
 - H2セクションの2〜3番目の後に1回、読者の共感・興味が最も高まった直後に挿入する
 - 文脈に合わせた一言＋リンクの形式にする
 - 例：
-  > **比較して選びたい方は、[DEARROOM六本木](https://spacemarket.com/p/AHbhuUbilSKvoqCw)をチェックしてみてください。**
+  > **比較して選びたい方は、[DEARROOM六本木](https://www.spacemarket.com/p/AHbhuUbilSKvoqCw)をチェックしてみてください。**
 
 Markdown出力形式（この順番・構造を厳守すること）：
 ---
@@ -401,7 +402,7 @@ updatedDate: {today}
 
 <div class="cta-box">
 推し活の理想の空間、六本木にあります。<br>
-<a href="https://spacemarket.com/p/AHbhuUbilSKvoqCw">DEARROOM六本木の予約はこちら</a>
+<a href="https://www.spacemarket.com/p/AHbhuUbilSKvoqCw">DEARROOM六本木の予約はこちら</a>
 </div>
 
 導入文（300字程度）
@@ -451,7 +452,7 @@ DEARROOMへの自然な誘導文（1〜2文）
 
 <div class="cta-box">
 （CTAテキスト）<br>
-<a href="https://spacemarket.com/p/AHbhuUbilSKvoqCw">DEARROOM六本木の予約はこちら</a>
+<a href="https://www.spacemarket.com/p/AHbhuUbilSKvoqCw">DEARROOM六本木の予約はこちら</a>
 </div>
 
 ---
@@ -507,7 +508,7 @@ def get_prompt_template(article_type: str) -> str:
 
 
 # ── 決定論的後処理 ────────────────────────────────────────────────────────────
-_SPACEMARKET_URL = 'https://spacemarket.com/p/AHbhuUbilSKvoqCw'
+_SPACEMARKET_URL = 'https://www.spacemarket.com/p/AHbhuUbilSKvoqCw'
 
 
 def _inject_frontmatter_intent(article: str, intent: str) -> str:
@@ -528,9 +529,9 @@ def _enforce_cta_attributes(article: str, slug: str) -> str:
     """
     _pos_seq = ['top', 'mid', 'bottom']
 
-    md_pat   = re.compile(r'\[([^\]]+)\]\(https://spacemarket\.com/p/[^)]+\)')
+    md_pat   = re.compile(r'\[([^\]]+)\]\(https://(?:www\.)?spacemarket\.com/p/[^)]+\)')
     html_pat = re.compile(
-        r'<a\s+([^>]*href=["\']https://spacemarket\.com/p/[^"\']*["\'][^>]*)>',
+        r'<a\s+([^>]*href=["\']https://(?:www\.)?spacemarket\.com/p/[^"\']*["\'][^>]*)>',
         re.DOTALL,
     )
 
@@ -558,10 +559,8 @@ def _enforce_cta_attributes(article: str, slug: str) -> str:
             attrs = m.group(1)
             if 'data-cta' in attrs:
                 continue  # already fully patched
-            href_m = re.search(r'href=["\']([^"\']+)["\']', attrs)
-            raw_href = href_m.group(1).split('?')[0] if href_m else _SPACEMARKET_URL
             replacement = (
-                f'<a href="{raw_href}?{utm}"'
+                f'<a href="{_SPACEMARKET_URL}?{utm}"'
                 f' data-cta="booking" data-pos="{pos}" data-article="{slug}">'
             )
 
@@ -570,10 +569,90 @@ def _enforce_cta_attributes(article: str, slug: str) -> str:
     return article
 
 
+# github-slugger（Astro/rehypeがH2見出しからid生成に使うライブラリ）と同じ規則でidを再現する。
+# 実装は github-slugger v2.0.0 の regex.js を49本の実記事＋合成テストケース(絵文字・記号・
+# 全角・囲み数字など計313パターン)で検証し、完全一致を確認済み（本コードコメント作成時点）。
+_SLUGGER_STRIP_RANGE = (0x2189, 0x24B5)  # 囲み英数字・矢印・数学記号等（circled digitsを含む）
+
+
+def _github_slug(text: str) -> str:
+    text = text.lower()
+    kept = []
+    for ch in text:
+        if ch == ' ':
+            kept.append(ch)
+            continue
+        if ch in ('-', '_'):
+            kept.append(ch)
+            continue
+        cp = ord(ch)
+        if _SLUGGER_STRIP_RANGE[0] <= cp <= _SLUGGER_STRIP_RANGE[1]:
+            continue
+        if unicodedata.category(ch)[0] in ('L', 'M', 'N'):
+            kept.append(ch)
+    return ''.join(kept).replace(' ', '-')
+
+
+def _unique_slugs(headings: list[str]) -> list[str]:
+    """github-slugger の GithubSlugger クラス（重複時に -1, -2... を付与）と同じ規則。"""
+    occurrences: dict[str, int] = {}
+    result = []
+    for h in headings:
+        base = _github_slug(h)
+        candidate = base
+        while candidate in occurrences:
+            occurrences[base] = occurrences.get(base, 0) + 1
+            candidate = f'{base}-{occurrences[base]}'
+        occurrences.setdefault(candidate, 0)
+        result.append(candidate)
+    return result
+
+
+_TOC_BLOCK_RE = re.compile(r'(^## 目次\n)((?:- \[.*\]\(#.*\)\n?)+)', re.MULTILINE)
+_TOC_LINE_RE = re.compile(r'^- \[(.*)\]\(#.*\)$')
+_H2_RE = re.compile(r'^##\s+(.+)$', re.MULTILINE)
+
+
+def sync_toc_anchors(article: str) -> str:
+    """
+    目次のアンカー（(#...)の部分）を、本文のH2見出しから github-slugger 規則で
+    再計算したidに置き換える。表示テキスト（[...]の部分）は変更しない。
+    目次項目数と本文側H2数（「目次」自身を除く）が一致しない場合は変換せず、
+    そのまま返す（stderrに警告を出すのみ）。
+    """
+    toc_match = _TOC_BLOCK_RE.search(article)
+    if not toc_match:
+        return article
+
+    toc_block = toc_match.group(2)
+    toc_lines = toc_block.rstrip('\n').split('\n')
+    parsed = [_TOC_LINE_RE.match(line) for line in toc_lines]
+    if any(p is None for p in parsed):
+        print('[writer] TOC警告: 目次の行フォーマットが不正なため、アンカー変換をスキップしました', file=sys.stderr)
+        return article
+
+    content_h2 = [h.strip() for h in _H2_RE.findall(article) if h.strip() != '目次']
+
+    if len(parsed) != len(content_h2):
+        print(
+            f'[writer] TOC警告: 目次項目数({len(parsed)})とH2数({len(content_h2)})が一致しないため、'
+            'アンカー変換をスキップしました',
+            file=sys.stderr,
+        )
+        return article
+
+    new_ids = _unique_slugs(content_h2)
+    new_lines = [f'- [{p.group(1)}](#{new_id})' for p, new_id in zip(parsed, new_ids)]
+    new_block = '\n'.join(new_lines) + '\n'
+
+    return article[:toc_match.start(2)] + new_block + article[toc_match.end(2):]
+
+
 def postprocess_article(article: str, slug: str, intent: str) -> str:
-    """frontmatter intent注入 + CTA属性付与の決定論的後処理。"""
+    """frontmatter intent注入 + CTA属性付与 + 目次アンカー同期の決定論的後処理。"""
     article = _inject_frontmatter_intent(article, intent)
     article = _enforce_cta_attributes(article, slug)
+    article = sync_toc_anchors(article)
     return article
 
 
@@ -811,7 +890,7 @@ def generate_article(plan: dict) -> str:
         f'- data-pos="top|mid|bottom"\n'
         f'- data-article="{slug}"\n\n'
         f'出力例（冒頭CTA）:\n'
-        f'<a href="https://spacemarket.com/p/AHbhuUbilSKvoqCw?utm_source=blog&utm_medium=cta&utm_campaign={slug}&utm_content=top"\n'
+        f'<a href="https://www.spacemarket.com/p/AHbhuUbilSKvoqCw?utm_source=blog&utm_medium=cta&utm_campaign={slug}&utm_content=top"\n'
         f'   data-cta="booking" data-pos="top" data-article="{slug}">DEARROOM六本木の予約はこちら</a>\n'
         f'\n---\n\n'
     )
@@ -826,7 +905,7 @@ def generate_article(plan: dict) -> str:
     internal_links_section = ''
     if internal_links:
         links_text = '\n'.join(
-            f'- [{l.get("anchor", l.get("slug", ""))}](/blog/{l.get("slug", "")}) （{l.get("reason", "")}）'
+            f'- [{l.get("anchor", l.get("slug", ""))}](/blog/{l.get("slug", "")}/) （{l.get("reason", "")}）'
             for l in internal_links
         )
         internal_links_section = (

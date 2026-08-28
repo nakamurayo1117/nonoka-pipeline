@@ -49,7 +49,7 @@
 - 広さ：24㎡（約15畳）・最大10名
 - 設備：100インチスクリーン・JBL BAR 800 Dolby Atmos・4Kプロジェクター・LEDライティング・Netflix/Amazon Prime/YouTube対応・ボードゲーム・キッチン・冷蔵庫・高速Wi-Fi
 - 特徴：推し色に変えられるLEDライティング・持ち込み自由・24時間利用可・ゴミ処理無料
-- 予約URL：https://spacemarket.com/p/AHbhuUbilSKvoqCw
+- 予約URL：https://www.spacemarket.com/p/AHbhuUbilSKvoqCw
 - レビュー：評価4.6（スペースマーケット）
 
 ## 禁止事項
